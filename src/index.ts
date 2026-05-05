@@ -1,7 +1,8 @@
 export default {
   async fetch(request: Request): Promise<Response> {
     const corsHeaders = {
-      'Access-Control-Allow-Origin': '*.wallet-bitcoin.pages.dev,*.arkade-wallet.pages.dev,arkade.money',
+      'Access-Control-Allow-Origin':
+        '*.wallet-bitcoin.pages.dev,*.arkade-wallet.pages.dev,arkade.money, localhost:3002',
       'Access-Control-Allow-Methods': 'GET,HEAD,POST,OPTIONS',
       'Access-Control-Max-Age': '86400',
     }
