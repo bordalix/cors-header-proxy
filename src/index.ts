@@ -1,17 +1,24 @@
+// A CORS reverse proxy for API requests from the frontend.
+// This is a Cloudflare Worker that acts as a CORS reverse proxy for API requests from the frontend.
+// It checks the Origin header against a whitelist of allowed domains, and if the request is valid,
+// it forwards the request to the target API server and returns the response with CORS headers.
+
+// Whitelist of allowed domains for CORS requests.
+const WHITELIST = ['*.wallet-bitcoin.pages.dev', '*.arkade-wallet.pages.dev', 'arkade.money', 'localhost:3002']
+
+// The endpoint you want the CORS reverse proxy to be on
+const PROXY_ENDPOINT = '/proxy'
+
 export default {
   async fetch(request: Request): Promise<Response> {
-    const corsHeaders = {
-      'Access-Control-Allow-Origin':
-        '*.wallet-bitcoin.pages.dev,*.arkade-wallet.pages.dev,arkade.money, localhost:3002',
-      'Access-Control-Allow-Methods': 'GET,HEAD,POST,OPTIONS',
-      'Access-Control-Max-Age': '86400',
+    // Check the Origin header against the whitelist
+    const origin = request.headers.get('Origin') || ''
+    if (!WHITELIST.some((domain) => origin.endsWith(domain))) {
+      return new Response('Forbidden', { status: 403 })
     }
 
-    // The endpoint you want the CORS reverse proxy to be on
-    const PROXY_ENDPOINT = '/proxy/'
-
-    // The rest of this snippet for the demo page
-    function rawHtmlResponse() {
+    // Return an HTML page for requests that don't include an API URL.
+    function htmlResponse() {
       const html = `
         <!DOCTYPE html>
         <html>
@@ -28,31 +35,48 @@ export default {
       })
     }
 
-    async function handleRequest(request: Request) {
-      const url = new URL(request.url)
-      let apiUrl = url.searchParams.get('apiurl')
+    // Return an error response if the API request fails.
+    function errorResponse(response: Response) {
+      const { status, statusText } = response
+      console.error('API Request Failed:', status, statusText)
+      return new Response(`API request failed with status ${status}: ${statusText}`, {
+        status,
+        statusText,
+      })
+    }
 
-      if (apiUrl == null) return rawHtmlResponse()
-
-      // Rewrite request to point to API URL. This also makes the request mutable
-      // so you can add the correct Origin header to make the API server think
-      // that this request is not cross-site.
-      request = new Request(apiUrl, request)
-      request.headers.set('Origin', new URL(apiUrl).origin)
-      let response = await fetch(request)
-      // Recreate the response so you can modify the headers
-
-      response = new Response(response.body, response)
-      // Set CORS headers
-
-      response.headers.set('Access-Control-Allow-Origin', url.origin)
-
-      // Append to/Add Vary header so browser will cache response correctly
-      response.headers.append('Vary', 'Origin')
-
+    // Return a JSON response with CORS headers.
+    function jsonResponse(json: any, response: Response) {
+      response = new Response(JSON.stringify(json), response)
+      response.headers.set('Access-Control-Allow-Origin', origin)
+      response.headers.set('Content-Type', 'application/json')
+      response.headers.delete('Content-Encoding')
       return response
     }
 
+    // Handle requests to the API server
+    async function handleRequest(request: Request) {
+      // Extract the API URL from the query parameters
+      // If no API URL is provided, return the html page.
+      const url = new URL(request.url)
+      let apiUrl = url.searchParams.get('apiurl')
+      if (apiUrl == null) return htmlResponse()
+
+      // Fetch the API URL
+      let response = await fetch(request)
+      if (!response.ok) return errorResponse(response)
+
+      // Parse the response as JSON and return it with CORS headers
+      try {
+        const body = await response.json()
+        return jsonResponse(body, response)
+      } catch (error) {
+        console.error('Failed to parse JSON:', error)
+        return new Response('Failed to parse JSON', { status: 500 })
+      }
+    }
+
+    // Handle CORS preflight requests
     async function handleOptions(request: Request) {
       if (
         request.headers.get('Origin') !== null &&
@@ -63,8 +87,10 @@ export default {
         const allowHeaders = request.headers.get('Access-Control-Request-Headers') ?? ''
         return new Response(null, {
           headers: {
-            ...corsHeaders,
+            'Access-Control-Max-Age': '86400',
+            'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Headers': allowHeaders,
+            'Access-Control-Allow-Methods': 'GET,HEAD,POST,OPTIONS',
           },
         })
       } else {
@@ -92,7 +118,7 @@ export default {
         })
       }
     } else {
-      return rawHtmlResponse()
+      return htmlResponse()
     }
   },
 } satisfies ExportedHandler
