@@ -4,7 +4,7 @@
 // it forwards the request to the target API server and returns the response with CORS headers.
 
 // Whitelist of allowed domains for CORS requests.
-const WHITELIST = ['*.wallet-bitcoin.pages.dev', '*.arkade-wallet.pages.dev', 'arkade.money', 'localhost:3002']
+const WHITELIST = ['wallet-bitcoin.pages.dev', 'arkade-wallet.pages.dev', 'arkade.money', 'localhost:3002']
 
 // The endpoint you want the CORS reverse proxy to be on
 const PROXY_ENDPOINT = '/proxy'
@@ -13,6 +13,7 @@ export default {
   async fetch(request: Request): Promise<Response> {
     // Check the Origin header against the whitelist
     const origin = request.headers.get('Origin') || ''
+    console.log('Received request from origin:', origin)
     if (!WHITELIST.some((domain) => origin.endsWith(domain))) {
       return new Response('Forbidden', { status: 403 })
     }
@@ -59,11 +60,15 @@ export default {
       // Extract the API URL from the query parameters
       // If no API URL is provided, return the html page.
       const url = new URL(request.url)
-      let apiUrl = url.searchParams.get('apiurl')
+      const apiUrl = url.searchParams.get('apiurl')
       if (apiUrl == null) return htmlResponse()
 
+      // Build an outbound request to the target URL (not to this worker URL)
+      const outboundRequest = new Request(apiUrl, request)
+      outboundRequest.headers.set('Origin', new URL(apiUrl).origin)
+
       // Fetch the API URL
-      let response = await fetch(request)
+      const response = await fetch(outboundRequest)
       if (!response.ok) return errorResponse(response)
 
       // Parse the response as JSON and return it with CORS headers
